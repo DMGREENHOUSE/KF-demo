@@ -7,6 +7,8 @@ RANGES = {
     "T_K": (18.0, 35.0),
 }
 
+FEED_TOTAL_MOLES = (50.0, 200.0)
+
 SPECIES = ["H2", "D2", "T2"]
 SPECIES_LABELS = {"H2": "H", "D2": "D", "T2": "T"}
 SPECIES_COLORS = {

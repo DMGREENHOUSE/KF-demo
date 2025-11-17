@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.stats import qmc
-from .constants import RANGES
+from .constants import RANGES, FEED_TOTAL_MOLES
 
 def lhs_unit(n_samples: int, dim: int, seed: int = 42) -> np.ndarray:
     sampler = qmc.LatinHypercube(d=dim, seed=seed)
@@ -20,7 +20,9 @@ def lhs_inputs(n_samples: int, seed: int = 42) -> pd.DataFrame:
 
     rng = np.random.default_rng(seed)
     feed = rng.dirichlet(alpha=[1.6, 1.3, 1.1], size=n_samples)
-    X["feed_H"] = feed[:, 0]
-    X["feed_D"] = feed[:, 1]
-    X["feed_T"] = feed[:, 2]
+    totals = rng.uniform(FEED_TOTAL_MOLES[0], FEED_TOTAL_MOLES[1], size=n_samples)
+    feed_moles = feed * totals[:, None]
+    X["feed_H"] = feed_moles[:, 0]
+    X["feed_D"] = feed_moles[:, 1]
+    X["feed_T"] = feed_moles[:, 2]
     return pd.DataFrame(X)

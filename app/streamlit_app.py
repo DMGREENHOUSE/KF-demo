@@ -13,7 +13,7 @@ if str(ROOT_DIR) not in sys.path:
 from src.config import BRAND, CONFIG
 from src.data import generate_dataset
 from src.utils import msll
-from src.constants import SPECIES_COLORS, SPECIES_LABELS, RANGES
+from src.constants import SPECIES_COLORS, SPECIES_LABELS, RANGES, FEED_TOTAL_MOLES
 
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -50,20 +50,20 @@ with st.expander("What does this generator do? (click to expand)"):
     st.markdown(
         """
 **Purpose.** Generate a synthetic ("fake-CFD") dataset for a cryogenic **hydrogen isotope** distillation segment:
-inputs → product fraction shifts. Use the CSVs to train GP emulators elsewhere, then upload their predictions here for validation.
+inputs → product mole shifts. Use the CSVs to train GP emulators elsewhere, then upload their predictions here for validation.
 
 **Inputs (X).**
 - `P_kPa` — Column pressure (kPa) | range: 60–300
 - `T_K` — Column temperature (K) | range: 18–35
-- `feed_H`, `feed_D`, `feed_T` — Feed fractions (sum = 1)
+- `feed_H`, `feed_D`, `feed_T` — Feed moles (not normalised)
 
 **Outputs (Y).**
-- `delta_*` — Change in top product fraction vs feed (`top - feed`) for H/D/T
+- `delta_*` — Change in top product moles vs feed (`top - feed`) for H/D/T
 
 **How it works.**
 - Specify the desired number of samples and random seed.
 - The app will generate a Latin hypercube sample (LHS) of the inputs within specified ranges.
-- The mock-CFD simulation will run for each sample input and generate the top and bottom isotope fractions.
+- The mock-CFD simulation will run for each sample input and generate the top and bottom isotope mole splits.
 - The user specifies the train/validation split fraction.
 - The app displays previews of the generated input/output datasets and allows CSV downloads.
 - These CSV downloads can be used to train a model in the Uncertainty Engine.
@@ -119,7 +119,7 @@ with tab_data:
         st.download_button("Download train inputs (train_X.csv)", csv_bytes(X_train), file_name="train_X.csv")
         st.download_button("Download validation inputs (val_X.csv)", csv_bytes(X_val), file_name="val_X.csv")
     with col_out:
-        st.markdown("**Outputs (delta)**")
+        st.markdown("**Outputs (delta moles)**")
         with st.expander("Show first 20 rows", expanded=False):
             st.dataframe(Y.head(20), use_container_width=True)
         st.download_button("Download train outputs (train_Y.csv)", csv_bytes(Y_train), file_name="train_Y.csv")
@@ -131,36 +131,41 @@ with tab_data:
     row_delta = Y.iloc[idx]
     row_detail = details.iloc[idx]
     row_input = X.iloc[idx]
+    feed_labels = [SPECIES_LABELS["H2"], SPECIES_LABELS["D2"], SPECIES_LABELS["T2"]]
+    feed_colors = [SPECIES_COLORS["H2"], SPECIES_COLORS["D2"], SPECIES_COLORS["T2"]]
+
     c_feed, c_top, c_delta = st.columns(3)
     with c_feed:
-        feed_values = [row_detail.feed_H, row_detail.feed_D, row_detail.feed_T]
-        feed_labels = [SPECIES_LABELS["H2"], SPECIES_LABELS["D2"], SPECIES_LABELS["T2"]]
-        feed_colors = [SPECIES_COLORS["H2"], SPECIES_COLORS["D2"], SPECIES_COLORS["T2"]]
+        feed_values = np.array([row_detail.feed_H, row_detail.feed_D, row_detail.feed_T], dtype=float)
+        feed_share = feed_values / feed_values.sum() if feed_values.sum() > 0 else np.ones(3) / 3
         fig_feed = px.pie(
-            values=feed_values,
+            values=feed_share,
             names=feed_labels,
             hole=0.35,
-            title="Feed Split",
+            title="Feed composition (share)",
         )
         fig_feed.update_traces(marker=dict(colors=feed_colors))
         fig_feed.update_traces(textposition="inside", textinfo="percent+label")
         st.plotly_chart(fig_feed, use_container_width=True)
         st.markdown(
-            f"**Pressure:** {row_input.P_kPa:.1f} kPa<br>**Temperature:** {row_input.T_K:.1f} K",
+            f"**Pressure:** {row_input.P_kPa:.1f} kPa<br>"
+            f"**Temperature:** {row_input.T_K:.1f} K<br>"
+            f"**Feed moles (H/D/T):** {feed_values[0]:.1f} / {feed_values[1]:.1f} / {feed_values[2]:.1f}",
             unsafe_allow_html=True,
         )
     with c_top:
-        top_values = [row_detail.y_top_H2, row_detail.y_top_D2, row_detail.y_top_T2]
-        top_labels = feed_labels
+        top_values = np.array([row_detail.top_H, row_detail.top_D, row_detail.top_T], dtype=float)
+        top_share = top_values / top_values.sum() if top_values.sum() > 0 else np.ones(3) / 3
         fig_top = px.pie(
-            values=top_values,
-            names=top_labels,
+            values=top_share,
+            names=feed_labels,
             hole=0.35,
-            title="Top Split",
+            title="Top composition (share)",
         )
         fig_top.update_traces(marker=dict(colors=feed_colors))
         fig_top.update_traces(textposition="inside", textinfo="percent+label")
         st.plotly_chart(fig_top, use_container_width=True)
+        st.caption(f"Top moles (H/D/T): {top_values[0]:.1f} / {top_values[1]:.1f} / {top_values[2]:.1f}")
     with c_delta:
         fig_delta = px.bar(
             x=feed_labels,
@@ -169,7 +174,7 @@ with tab_data:
             color=feed_labels,
             color_discrete_map={label: color for label, color in zip(feed_labels, feed_colors)},
         )
-        fig_delta.update_layout(yaxis_title="Fraction change", xaxis_title="")
+        fig_delta.update_layout(yaxis_title="Mole change", xaxis_title="")
         st.plotly_chart(fig_delta, use_container_width=True)
 
 with tab_validate:
@@ -316,16 +321,17 @@ with tab_vis:
 
         - Pressure: {RANGES["P_kPa"][0]}–{RANGES["P_kPa"][1]} kPa
         - Temperature: {RANGES["T_K"][0]}–{RANGES["T_K"][1]} K
-        - Feed fractions: H, D, T ∈ [0, 1] (no sum-to-one constraint)
+        - Feed moles: H, D, T ∈ [0, {FEED_TOTAL_MOLES[1]}] mol (independent axes)
         """
     )
-    p_steps = t_steps = feed_steps = 10
-    min_feed = 0.
+    st.info("Resolution fixed at 12 steps per dimension.")
+    p_steps = t_steps = feed_steps = 12
+    min_feed = st.number_input("Minimum feed component (mol)", min_value=0.0, max_value=FEED_TOTAL_MOLES[1], value=0.0, step=1.0)
 
     def build_mesh():
         p_vals = np.linspace(RANGES["P_kPa"][0], RANGES["P_kPa"][1], p_steps)
         t_vals = np.linspace(RANGES["T_K"][0], RANGES["T_K"][1], t_steps)
-        feed_vals = np.linspace(0.0, 1.0, feed_steps)
+        feed_vals = np.linspace(0.0, FEED_TOTAL_MOLES[1], feed_steps)
         rows = []
         for P in p_vals:
             for T in t_vals:
@@ -338,13 +344,14 @@ with tab_vis:
         return pd.DataFrame(rows)
 
     mesh_df = build_mesh()
-    st.caption(f"Mesh with {p_steps} steps per dimension: **{len(mesh_df)}** combinations.")
+    st.caption(f"Mesh contains **{len(mesh_df):,}** combinations.")
     st.dataframe(mesh_df.head(50), use_container_width=True)
     if len(mesh_df) == 0:
-        st.warning("No valid combinations with current settings. Adjust the feed resolution or minimum component.")
+        st.warning("No valid combinations with current settings. Increase the feed range or lower the minimum component.")
     else:
+        mesh_df_float16 = mesh_df.astype(np.float16)
         st.download_button(
             "Download mesh grid (CSV)",
-            mesh_df.to_csv(index=False).encode("utf-8"),
+            mesh_df_float16.to_csv(index=False).encode("utf-8"),
             file_name="mesh_grid_X.csv",
         )

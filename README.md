@@ -1,7 +1,7 @@
 # Cryogenic Isotope Separation — GP Emulator Demo
 
 This is a minimal, physics-inspired demo that generates synthetic data for a cryogenic H/D/T
-distillation segment. It maps operating/geometry inputs + feed fractions to product fractions.
+distillation segment. It maps operating/geometry inputs + feed moles to product mole shifts.
 
 Now includes:
 - Dataset description & variable glossary (expander)

@@ -11,10 +11,10 @@ def separation_strength(P_kPa: float, T_K: float) -> float:
     S = 1.0 + 0.45 * np.tanh(-p_norm) + 0.35 * np.tanh(-t_norm)
     return float(np.clip(S, 0.4, 1.6))
 
-def effective_alpha(S: float, feed: np.ndarray) -> dict:
+def effective_alpha(S: float, feed_frac: np.ndarray) -> dict:
     """Blend baseline selectivity with feed-driven enrichment biases."""
     base = {k: (v ** S) for k, v in ALPHA_BASE.items()}
-    centered_feed = feed - 1.0 / len(feed)
+    centered_feed = feed_frac - 1.0 / len(feed_frac)
     bias = np.clip(1.0 + 0.5 * centered_feed, 0.6, 1.4)
     alpha = {}
     for idx, species in enumerate(SPECIES):
@@ -40,12 +40,20 @@ def product_fractions(feed: np.ndarray, alpha: dict, noise_scale: float = 0.0, r
 def simulate_outputs(df_inputs: pd.DataFrame, seed: int = 42):
     delta_rows = []
     detail_rows = []
+    rng = np.random.default_rng(seed)
     for _, r in df_inputs.iterrows():
         feed = np.array([r.feed_H, r.feed_D, r.feed_T], dtype=float)
-        S = separation_strength(r.P_kPa, r.T_K)
-        alpha = effective_alpha(S, feed)
-        y_top, _ = product_fractions(feed, alpha, noise_scale=0.0)
-        delta = y_top - feed
+        total_moles = np.sum(feed)
+        if total_moles <= 0:
+            continue
+        feed_frac = feed / total_moles
+
+        S = separation_strength(r.P_kPa, r.T_K) 
+        alpha = effective_alpha(S, feed_frac)
+        noise_scale = 0.01
+        y_top, _ = product_fractions(feed_frac, alpha, noise_scale=noise_scale, rng=rng)
+        top_moles = y_top * total_moles
+        delta = top_moles - feed
         delta_rows.append({
             "delta_H": delta[0],
             "delta_D": delta[1],
@@ -55,9 +63,12 @@ def simulate_outputs(df_inputs: pd.DataFrame, seed: int = 42):
             "feed_H": feed[0],
             "feed_D": feed[1],
             "feed_T": feed[2],
-            "y_top_H2": y_top[0],
-            "y_top_D2": y_top[1],
-            "y_top_T2": y_top[2],
+            "top_H": top_moles[0],
+            "top_D": top_moles[1],
+            "top_T": top_moles[2],
+            "top_frac_H": y_top[0],
+            "top_frac_D": y_top[1],
+            "top_frac_T": y_top[2],
             "S_eff": S,
         })
     return pd.DataFrame(delta_rows), pd.DataFrame(detail_rows)

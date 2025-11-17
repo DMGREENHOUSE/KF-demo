@@ -5,8 +5,8 @@ from sklearn.metrics import r2_score
 from pathlib import Path
 import sys
 
-# Ensure the repository root is importable so `src` works even when run from app/
-ROOT_DIR = Path(__file__).resolve().parents[1]
+# Ensure the repository root is importable so `src` works even when run directly
+ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
@@ -324,10 +324,7 @@ with tab_vis:
         - Feed moles: H, D, T ∈ [0, {FEED_TOTAL_MOLES[1]}] mol (independent axes)
         """
     )
-    st.info("Resolution fixed at 12 steps per dimension.")
     p_steps = t_steps = feed_steps = 12
-    min_feed = st.number_input("Minimum feed component (mol)", min_value=0.0, max_value=FEED_TOTAL_MOLES[1], value=0.0, step=1.0)
-
     def build_mesh():
         p_vals = np.linspace(RANGES["P_kPa"][0], RANGES["P_kPa"][1], p_steps)
         t_vals = np.linspace(RANGES["T_K"][0], RANGES["T_K"][1], t_steps)
@@ -338,8 +335,6 @@ with tab_vis:
                 for fH in feed_vals:
                     for fD in feed_vals:
                         for fT in feed_vals:
-                            if min(fH, fD, fT) < min_feed:
-                                continue
                             rows.append({"P_kPa": P, "T_K": T, "feed_H": fH, "feed_D": fD, "feed_T": fT})
         return pd.DataFrame(rows)
 
